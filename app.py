@@ -6,6 +6,9 @@ import base64
 import time
 import csv
 import io
+import importlib
+import magi_core
+importlib.reload(magi_core)
 from streamlit_echarts import st_echarts
 
 # --- 1. ページ構成 ---
@@ -101,8 +104,9 @@ if not st.session_state.authenticated:
                 st.session_state.authenticated = True
                 st.session_state.user = user
                 # セッション永続化用トークン発行
-                token = magi_core.create_session(user)
-                st.query_params["sync_token"] = token
+                if hasattr(magi_core, "create_session"):
+                    token = magi_core.create_session(user)
+                    st.query_params["sync_token"] = token
                 st.success("SYNCHRONIZATION COMPLETE.")
                 time.sleep(1)
                 st.rerun()
