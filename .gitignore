@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+env/
+venv/
+.env
+
+# MAGI System State (Secrets & History)
+api_keys.json
+history.json
+personas.json
+templates.json
+
+# Docker
+.dockerignore

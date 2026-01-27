@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  magi-system:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: magi_system
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+    restart: unless-stopped
