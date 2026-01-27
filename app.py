@@ -4,6 +4,8 @@ import magi_core
 import json
 import base64
 import time
+import csv
+import io
 from streamlit_echarts import st_echarts
 
 # --- 1. ページ構成 ---
@@ -99,18 +101,28 @@ if not st.session_state.authenticated:
 
 # --- 3. ナビゲーション ---
 def show_nav():
-    cols = st.columns([4, 1, 1])
+    cols = st.columns([3, 1.5, 1.5])
     with cols[0]:
         t = "MAGI SYSTEM INTERFACE" if st.session_state.page == "main" else ("ADMIN CONSOLE" if st.session_state.page == "admin" else "CENTRAL LOGS")
         st.markdown(f'<h1 class="main-title">{t}</h1>', unsafe_allow_html=True)
     with cols[1]:
-        st.markdown(f'<div style="text-align:right; font-size:0.8em; color:#00FF00; padding-top:10px;">Operator: {st.session_state.user["name"]} [{st.session_state.user["role"]}]</div>', unsafe_allow_html=True)
-        if st.button("HISTORY", use_container_width=True): st.session_state.page = "history"; st.rerun()
-    with cols[2]:
-        if st.session_state.page == "admin":
-            if st.button("RETURN", use_container_width=True): st.session_state.page = "main"; st.rerun()
+        # Fixed height for operator text to prevent jumping/overlap
+        st.markdown(f'<div style="text-align:right; font-size:0.7em; color:#00FF00; height:18px; margin-bottom:5px; overflow:hidden; white-space:nowrap;">Operator: {st.session_state.user["name"]}</div>', unsafe_allow_html=True)
+        if st.session_state.page == "history":
+            if st.button("◀ RETURN", use_container_width=True): st.session_state.page = "main"; st.rerun()
         else:
-            if st.button("ADMIN ▶", use_container_width=True): st.session_state.page = "admin"; st.rerun()
+            if st.button("HISTORY", use_container_width=True): st.session_state.page = "history"; st.rerun()
+    with cols[2]:
+        st.markdown('<div style="height:23px;"></div>', unsafe_allow_html=True)
+        is_admin = st.session_state.user["role"] in ["Commander", "Sub-Commander"] or "Admin" in st.session_state.user["role"]
+        
+        if st.session_state.page == "admin":
+            if not is_admin:
+                st.session_state.page = "main"
+                st.rerun()
+            if st.button("RETURN", use_container_width=True, key="admin_ret"): st.session_state.page = "main"; st.rerun()
+        elif is_admin:
+            if st.button("ADMIN ▶", use_container_width=True, key="admin_nav"): st.session_state.page = "admin"; st.rerun()
     st.markdown('<div class="header-container"></div>', unsafe_allow_html=True)
 
 # --- 4. メイン画面 ---
@@ -194,25 +206,32 @@ def render_history():
             st.download_button("Export Report", md, file_name=f"MAGI_{item['id']}.md", key=f"dl_{item['id']}")
 
 def render_admin():
-    t_persona, t_api, t_sys = st.tabs(["🧬 PERSONA", "🔌 API / SEELE", "⚙️ SYSTEM"])
+    t_persona, t_api, t_sys, t_int, t_usr = st.tabs(["🧬 PERSONA", "🔌 API / SEELE", "⚙️ SYSTEM", "🛰️ INTEGRATIONS", "👥 USERS"])
     api_config = magi_core.load_api_config()
 
     with t_persona:
         config = magi_core.load_persona_config()
-        api_providers = api_config["providers"]
-        # p_tabs = st.tabs(["MELCHIOR", "BALTHASAR", "CASPER"]) # This line is removed as per the diff
-        for pid, d in config["personas"].items():
-            with st.expander(f"MAGI {pid.upper()}: {d['name']}", expanded=True):
-                d["name"] = st.text_input("Name", d["name"], key=f"n_{pid}")
-                d["role"] = st.text_input("Role", d["role"], key=f"r_{pid}")
-                c_prov = st.selectbox("Provider", list(api_config["providers"].keys()), index=list(api_config["providers"].keys()).index(d.get("provider", "google")), key=f"p_{pid}")
-                d["provider"] = c_prov
+        for pid, d in config.items():
+            if not isinstance(d, dict): continue
+            with st.expander(f"MAGI {pid.upper()}: {d.get('name', pid)}", expanded=True):
+                d["name"] = st.text_input("Name", d.get("name", pid), key=f"n_{pid}")
+                
+                # Support role_desc as the primary 'Role' field
+                r_key = "role_desc" if "role_desc" in d else ("role" if "role" in d else "role_desc")
+                d[r_key] = st.text_input("Role / Persona Description", d.get(r_key, ""), key=f"r_{pid}")
+                
+                cur_prov = d.get("model_provider", d.get("provider", "google"))
+                c_prov = st.selectbox("Provider", list(api_config["providers"].keys()), 
+                                    index=list(api_config["providers"].keys()).index(cur_prov) if cur_prov in api_config["providers"] else 0, 
+                                    key=f"p_{pid}")
+                d["model_provider"] = c_prov # standardizing on one key for later save
                 
                 m_list = api_config["providers"].get(c_prov, {}).get("models", ["gemini-1.5-flash"])
-                if d["model_name"] not in m_list: m_list.append(d["model_name"])
-                d["model_name"] = st.selectbox("Model", m_list, index=m_list.index(d["model_name"]), key=f"m_{pid}")
+                cur_model = d.get("model_name", "gemini-1.5-flash")
+                if cur_model not in m_list: m_list.append(cur_model)
+                d["model_name"] = st.selectbox("Model", m_list, index=m_list.index(cur_model), key=f"m_{pid}")
                 d["temperature"] = st.slider("Temp", 0.0, 1.0, float(d.get("temperature", 0.7)), key=f"t_{pid}")
-                d["prompt"] = st.text_area("System Prompt", d["prompt"], height=250, key=f"sp_{pid}")
+                d["prompt"] = st.text_area("System Prompt", d.get("prompt", ""), height=250, key=f"sp_{pid}")
                 if st.button(f"Save {pid} Settings"):
                     magi_core.save_persona_config(config); st.success("Updated.")
 
@@ -271,6 +290,68 @@ def render_admin():
                     wh[wid]["url"] = new_url
                     magi_core.save_json(magi_core.WEBHOOKS_PATH, webhooks_data)
                     st.success("CONFIGURATION UPDATED.")
+
+    with t_usr:
+        st.markdown("### 👥 NERV PERSONNEL MANAGEMENT")
+        
+        # Add User Form
+        with st.expander("➕ REGISTER NEW PERSONNEL", expanded=False):
+            with st.form("add_user_form"):
+                new_uid = st.text_input("USER ID (CODE NAME)")
+                new_name = st.text_input("FULL NAME")
+                new_pass = st.text_input("SECRET KEY / PASSWORD", type="password")
+                new_role = st.selectbox("ROLE", ["Commander", "Sub-Commander", "Operations Director", "Chief Scientist", "Operator"])
+                if st.form_submit_button("REGISTER TO NERV DATABASE"):
+                    if new_uid and new_pass and new_name:
+                        if magi_core.add_user(new_uid, new_pass, new_name, new_role):
+                            st.success(f"User {new_uid} registered successfully.")
+                            # time.sleep(1) # Optional UI delay
+                            st.rerun()
+                        else: st.error("User ID already exists.")
+                    else: st.error("Please fill all fields.")
+
+        # Bulk Operations (CSV)
+        with st.expander("📂 BULK OPERATIONS (CSV IMPORT/EXPORT)", expanded=False):
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown("**EXPORT PERSONNEL**")
+                all_users = magi_core.get_all_users()
+                output = io.StringIO()
+                writer = csv.writer(output)
+                writer.writerow(["id", "password", "name", "role"])
+                for uid, info in all_users.items():
+                    writer.writerow([uid, info.get("password", ""), info.get("name", ""), info.get("role", "")])
+                st.download_button("DOWNLOAD CSV", output.getvalue(), file_name="magi_personnel.csv", mime="text/csv")
+            
+            with c2:
+                st.markdown("**IMPORT PERSONNEL**")
+                uploaded_csv = st.file_uploader("Upload CSV (id,password,name,role)", type="csv", key="user_csv")
+                if uploaded_csv:
+                    if st.button("EXECUTE IMPORT"):
+                        try:
+                            stream = io.StringIO(uploaded_csv.getvalue().decode("utf-8"))
+                            reader = csv.DictReader(stream)
+                            count = 0
+                            for row in reader:
+                                if magi_core.add_user(row["id"], row["password"], row["name"], row["role"]):
+                                    count += 1
+                            st.success(f"Imported {count} users.")
+                            time.sleep(1); st.rerun()
+                        except Exception as e:
+                            st.error(f"Import failed: {e}")
+
+        st.markdown("---")
+        # List Users
+        users = magi_core.get_all_users()
+        for uid, info in users.items():
+            ucols = st.columns([3, 2, 1])
+            ucols[0].markdown(f"**{info['name']}** (`{uid}`)")
+            ucols[1].markdown(f"Role: {info['role']}")
+            if uid != "nerv_admin":
+                if ucols[2].button("DELETE", key=f"del_{uid}"):
+                    if magi_core.delete_user(uid):
+                        st.success(f"User {uid} deleted.")
+                        st.rerun()
 
 # --- 5. 実行 ---
 show_nav()
