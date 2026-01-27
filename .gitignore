@@ -11,6 +11,7 @@ api_keys.json
 history.json
 personas.json
 templates.json
+sessions.json
 
 # Docker
 .dockerignore

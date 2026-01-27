@@ -5,6 +5,7 @@ import json
 import datetime
 import random
 import requests
+import uuid
 from typing import List, Tuple, Dict, Any, Optional
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
@@ -27,6 +28,7 @@ HISTORY_PATH = os.path.join(BASE_DIR, "history.json")
 TEMPLATES_PATH = os.path.join(BASE_DIR, "templates.json")
 USERS_PATH = os.path.join(BASE_DIR, "users.json")
 WEBHOOKS_PATH = os.path.join(BASE_DIR, "webhooks.json")
+SESSIONS_PATH = os.path.join(BASE_DIR, "sessions.json")
 
 # 最終確定プロンプト指示
 OUTPUT_INSTRUCTION = """
@@ -141,6 +143,49 @@ def authenticate_user(username, password) -> Optional[Dict[str, str]]:
     if user and user["password"] == password:
         return {"username": username, "name": user["name"], "role": user["role"]}
     return None
+
+def add_user(username, password, name, role) -> bool:
+    users_data = load_json(USERS_PATH, {"users": {}})
+    if username in users_data["users"]: return False
+    users_data["users"][username] = {"password": password, "name": name, "role": role}
+    save_json(USERS_PATH, users_data)
+    return True
+
+def delete_user(username) -> bool:
+    users_data = load_json(USERS_PATH, {"users": {}})
+    if username == "nerv_admin": return False # Prevent deleting root
+    if username in users_data["users"]:
+        del users_data["users"][username]
+        save_json(USERS_PATH, users_data)
+        return True
+    return False
+
+def get_all_users() -> Dict[str, Dict[str, str]]:
+    return load_json(USERS_PATH, {"users": {}}).get("users", {})
+
+def create_session(user_info: Dict[str, str]) -> str:
+    token = str(uuid.uuid4())
+    sessions = load_json(SESSIONS_PATH, {})
+    sessions[token] = {
+        "user": user_info,
+        "created_at": datetime.datetime.now().isoformat()
+    }
+    save_json(SESSIONS_PATH, sessions)
+    return token
+
+def validate_session(token: str) -> Optional[Dict[str, str]]:
+    sessions = load_json(SESSIONS_PATH, {})
+    sess = sessions.get(token)
+    if sess:
+        # Optional: Add expiration check here
+        return sess["user"]
+    return None
+
+def clear_session(token: str):
+    sessions = load_json(SESSIONS_PATH, {})
+    if token in sessions:
+        del sessions[token]
+        save_json(SESSIONS_PATH, sessions)
 
 def add_history_with_user(user_id: str, question: str, results: List[Tuple[str, str, str, str]], final_score: int, seele_summary: str = "", file_name: str = ""):
     history = load_json(HISTORY_PATH, [])

@@ -20,6 +20,15 @@ if "page" not in st.session_state: st.session_state.page = "main"
 if "authenticated" not in st.session_state: st.session_state.authenticated = False
 if "results" not in st.session_state: st.session_state.results = None
 
+# 自動ログイン処理 (Session Persistence)
+if not st.session_state.authenticated:
+    token = st.query_params.get("sync_token")
+    if token:
+        user_info = magi_core.validate_session(token)
+        if user_info:
+            st.session_state.authenticated = True
+            st.session_state.user = user_info
+
 # デザイン (CSS)
 CSS = """
 <style>
@@ -91,6 +100,9 @@ if not st.session_state.authenticated:
             if user:
                 st.session_state.authenticated = True
                 st.session_state.user = user
+                # セッション永続化用トークン発行
+                token = magi_core.create_session(user)
+                st.query_params["sync_token"] = token
                 st.success("SYNCHRONIZATION COMPLETE.")
                 time.sleep(1)
                 st.rerun()
@@ -108,10 +120,20 @@ def show_nav():
     with cols[1]:
         # Fixed height for operator text to prevent jumping/overlap
         st.markdown(f'<div style="text-align:right; font-size:0.7em; color:#00FF00; height:18px; margin-bottom:5px; overflow:hidden; white-space:nowrap;">Operator: {st.session_state.user["name"]}</div>', unsafe_allow_html=True)
-        if st.session_state.page == "history":
-            if st.button("◀ RETURN", use_container_width=True): st.session_state.page = "main"; st.rerun()
-        else:
-            if st.button("HISTORY", use_container_width=True): st.session_state.page = "history"; st.rerun()
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.session_state.page == "history":
+                if st.button("◀ RETURN", use_container_width=True): st.session_state.page = "main"; st.rerun()
+            else:
+                if st.button("HISTORY", use_container_width=True): st.session_state.page = "history"; st.rerun()
+        with c2:
+            if st.button("LOGOUT", use_container_width=True):
+                if "sync_token" in st.query_params:
+                    token = st.query_params["sync_token"]
+                    magi_core.clear_session(token)
+                    st.query_params.clear()
+                st.session_state.authenticated = False
+                st.rerun()
     with cols[2]:
         st.markdown('<div style="height:23px;"></div>', unsafe_allow_html=True)
         is_admin = st.session_state.user["role"] in ["Commander", "Sub-Commander"] or "Admin" in st.session_state.user["role"]
