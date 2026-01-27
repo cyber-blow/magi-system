@@ -9,17 +9,17 @@ import uuid
 from typing import List, Tuple, Dict, Any, Optional
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-# PDF解析用
+# PDF Analysis
 import PyPDF2
 import io
 
-# 各社AIライブラリ
+# AI Providers
 import google.generativeai as genai
 from groq import AsyncGroq
 from openai import AsyncOpenAI
 from anthropic import AsyncAnthropic
 
-# --- 1. パスと定数 ---
+# --- 1. Constants & Paths ---
 
 BASE_DIR = os.path.dirname(__file__)
 PERSONA_PATH = os.path.join(BASE_DIR, "personas.json")
@@ -30,7 +30,7 @@ USERS_PATH = os.path.join(BASE_DIR, "users.json")
 WEBHOOKS_PATH = os.path.join(BASE_DIR, "webhooks.json")
 SESSIONS_PATH = os.path.join(BASE_DIR, "sessions.json")
 
-# 最終確定プロンプト指示
+# Output format instruction for consistent parsing
 OUTPUT_INSTRUCTION = """
 【重要：出力形式の遵守】
 1. 回答は**プレーンテキストのみ**で行ってください。HTMLタグ（<div>など）やMarkdownのコードブロックは絶対に使用しないでください。
@@ -47,7 +47,7 @@ OUTPUT_INSTRUCTION = """
 結論: 【是認】
 """
 
-# SEELE 統合プロンプト
+# SEELE Synthesis Prompt
 SEELE_PROMPT = """
 あなたはゼーレ（SEELE）の最高幹部であり、MAGIシステムの審議結果を総括する責任者です。
 メルキオール、バルタザール、カスパーの3つの意見を統合し、組織としての最終的な意思決定および戦略的助言を行ってください。
@@ -64,9 +64,10 @@ SEELE_PROMPT = """
 3. 戦略的アドバイス
 """
 
-# --- 2. 設定管理 (JSON Utilities) ---
+# --- 2. Configuration & Data Management (JSON) ---
 
 def load_json(path: str, default: Any) -> Any:
+    """Load JSON file safely, returning default if missing or invalid."""
     if os.path.exists(path):
         try:
             with open(path, 'r', encoding='utf-8') as f:
@@ -75,7 +76,8 @@ def load_json(path: str, default: Any) -> Any:
             print(f"Error loading {path}: {e}")
     return default
 
-def save_json(path: str, data: Any):
+def save_json(path: str, data: Any) -> None:
+    """Save data to JSON file with UTF-8 encoding."""
     try:
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
@@ -83,12 +85,15 @@ def save_json(path: str, data: Any):
         print(f"Error saving {path}: {e}")
 
 def load_persona_config() -> Dict[str, Any]:
+    """Load persona configurations (Melchior, Balthasar, Casper)."""
     return load_json(PERSONA_PATH, {})
 
-def save_persona_config(config: Dict[str, Any]):
+def save_persona_config(config: Dict[str, Any]) -> None:
+    """Save persona configurations."""
     save_json(PERSONA_PATH, config)
 
 def load_api_config() -> Dict[str, Any]:
+    """Load API provider settings and available models."""
     default_config = {
         "seele_model": {"provider": "google", "name": "gemini-2.0-flash"},
         "providers": {
@@ -100,16 +105,18 @@ def load_api_config() -> Dict[str, Any]:
         }
     }
     data = load_json(API_KEYS_PATH, default_config)
+    # Ensure structure integrity
     if "providers" not in data: data["providers"] = default_config["providers"]
     if "seele_model" not in data: data["seele_model"] = default_config["seele_model"]
-    # Ensure 'local' exists
     if "local" not in data["providers"]: data["providers"]["local"] = default_config["providers"]["local"]
     return data
 
-def save_api_config(config: Dict[str, Any]):
+def save_api_config(config: Dict[str, Any]) -> None:
+    """Save API provider settings."""
     save_json(API_KEYS_PATH, config)
 
-def add_history(question: str, results: List[Tuple[str, str, str, str]], final_score: int, seele_summary: str = "", file_name: str = ""):
+def add_history(question: str, results: List[Tuple[str, str, str, str]], final_score: int, seele_summary: str = "", file_name: str = "") -> None:
+    """Legacy wrapper for adding history (without user context)."""
     history = load_json(HISTORY_PATH, [])
     entry = {
         "id": datetime.datetime.now().strftime("%Y%m%d%H%M%S"),
@@ -123,71 +130,8 @@ def add_history(question: str, results: List[Tuple[str, str, str, str]], final_s
     history.insert(0, entry)
     save_json(HISTORY_PATH, history[:100])
 
-def execute_webhook_action(webhook_id: str, title: str, text: str) -> bool:
-    webhooks = load_json(WEBHOOKS_PATH, {"webhooks": {}}).get("webhooks", {})
-    cfg = webhooks.get(webhook_id)
-    if not cfg or not cfg.get("url"): return False
-    
-    try:
-        # Standard Slack/Discord payload
-        payload = {"text": f"【MAGI SYSTEM DECISION】\n*Topic*: {title}\n\n{text}"}
-        res = requests.post(cfg["url"], json=payload, timeout=10)
-        return res.status_code < 300
-    except Exception as e:
-        print(f"Webhook failed: {e}")
-        return False
-
-def authenticate_user(username, password) -> Optional[Dict[str, str]]:
-    users_data = load_json(USERS_PATH, {"users": {}})
-    user = users_data.get("users", {}).get(username)
-    if user and user["password"] == password:
-        return {"username": username, "name": user["name"], "role": user["role"]}
-    return None
-
-def add_user(username, password, name, role) -> bool:
-    users_data = load_json(USERS_PATH, {"users": {}})
-    if username in users_data["users"]: return False
-    users_data["users"][username] = {"password": password, "name": name, "role": role}
-    save_json(USERS_PATH, users_data)
-    return True
-
-def delete_user(username) -> bool:
-    users_data = load_json(USERS_PATH, {"users": {}})
-    if username == "nerv_admin": return False # Prevent deleting root
-    if username in users_data["users"]:
-        del users_data["users"][username]
-        save_json(USERS_PATH, users_data)
-        return True
-    return False
-
-def get_all_users() -> Dict[str, Dict[str, str]]:
-    return load_json(USERS_PATH, {"users": {}}).get("users", {})
-
-def create_session(user_info: Dict[str, str]) -> str:
-    token = str(uuid.uuid4())
-    sessions = load_json(SESSIONS_PATH, {})
-    sessions[token] = {
-        "user": user_info,
-        "created_at": datetime.datetime.now().isoformat()
-    }
-    save_json(SESSIONS_PATH, sessions)
-    return token
-
-def validate_session(token: str) -> Optional[Dict[str, str]]:
-    sessions = load_json(SESSIONS_PATH, {})
-    sess = sessions.get(token)
-    if sess:
-        # Optional: Add expiration check here
-        return sess["user"]
-    return None
-
-def clear_session(token: str):
-    sessions = load_json(SESSIONS_PATH, {})
-    if token in sessions:
-        del sessions[token]
-        save_json(SESSIONS_PATH, sessions)
-
-def add_history_with_user(user_id: str, question: str, results: List[Tuple[str, str, str, str]], final_score: int, seele_summary: str = "", file_name: str = ""):
+def add_history_with_user(user_id: str, question: str, results: List[Tuple[str, str, str, str]], final_score: int, seele_summary: str = "", file_name: str = "") -> None:
+    """Record a deliberation session into history.json with user context."""
     history = load_json(HISTORY_PATH, [])
     entry = {
         "id": datetime.datetime.now().strftime("%Y%m%d%H%M%S"),
@@ -200,11 +144,85 @@ def add_history_with_user(user_id: str, question: str, results: List[Tuple[str, 
         "seele_summary": seele_summary
     }
     history.insert(0, entry)
-    save_json(HISTORY_PATH, history[:100])
+    save_json(HISTORY_PATH, history[:100]) # Keep last 100 entries
 
-# --- 3. クライアント管理 ---
+def execute_webhook_action(webhook_id: str, title: str, text: str) -> bool:
+    """Execute an external webhook action (Slack/Discord)."""
+    webhooks = load_json(WEBHOOKS_PATH, {"webhooks": {}}).get("webhooks", {})
+    cfg = webhooks.get(webhook_id)
+    if not cfg or not cfg.get("url"): return False
+    
+    try:
+        payload = {"text": f"【MAGI SYSTEM DECISION】\n*Topic*: {title}\n\n{text}"}
+        res = requests.post(cfg["url"], json=payload, timeout=10)
+        return res.status_code < 300
+    except Exception as e:
+        print(f"Webhook failed: {e}")
+        return False
 
-def get_clients():
+# --- 3. User Authentication & Session Management ---
+
+def authenticate_user(username: str, password: str) -> Optional[Dict[str, str]]:
+    """Verify user credentials against users.json."""
+    users_data = load_json(USERS_PATH, {"users": {}})
+    user = users_data.get("users", {}).get(username)
+    if user and user["password"] == password:
+        return {"username": username, "name": user["name"], "role": user["role"]}
+    return None
+
+def add_user(username: str, password: str, name: str, role: str) -> bool:
+    """Register a new user."""
+    users_data = load_json(USERS_PATH, {"users": {}})
+    if username in users_data["users"]: return False
+    users_data["users"][username] = {"password": password, "name": name, "role": role}
+    save_json(USERS_PATH, users_data)
+    return True
+
+def delete_user(username: str) -> bool:
+    """Delete a user, preventing deletion of root admin."""
+    users_data = load_json(USERS_PATH, {"users": {}})
+    if username == "nerv_admin": return False # Prevent deleting root
+    if username in users_data["users"]:
+        del users_data["users"][username]
+        save_json(USERS_PATH, users_data)
+        return True
+    return False
+
+def get_all_users() -> Dict[str, Dict[str, str]]:
+    """Retrieve all properly registered users."""
+    return load_json(USERS_PATH, {"users": {}}).get("users", {})
+
+def create_session(user_info: Dict[str, str]) -> str:
+    """Create a new persistent session and return the token."""
+    token = str(uuid.uuid4())
+    sessions = load_json(SESSIONS_PATH, {})
+    sessions[token] = {
+        "user": user_info,
+        "created_at": datetime.datetime.now().isoformat()
+    }
+    save_json(SESSIONS_PATH, sessions)
+    return token
+
+def validate_session(token: str) -> Optional[Dict[str, str]]:
+    """Validate a session token and return user info if valid."""
+    sessions = load_json(SESSIONS_PATH, {})
+    sess = sessions.get(token)
+    if sess:
+        # Optional: Add expiration check here logic in future
+        return sess["user"]
+    return None
+
+def clear_session(token: str) -> None:
+    """Invalidate a specific session token."""
+    sessions = load_json(SESSIONS_PATH, {})
+    if token in sessions:
+        del sessions[token]
+        save_json(SESSIONS_PATH, sessions)
+
+# --- 4. Client Management ---
+
+def get_clients() -> Dict[str, Any]:
+    """Initialize and return AI clients based on configuration."""
     api_config = load_api_config()
     providers = api_config.get("providers", {})
     clients = {"google": None, "groq": None, "openai": None, "anthropic": None, "local": None}
@@ -226,7 +244,7 @@ def get_clients():
         except Exception as e: print(f"Local client failed: {e}")
     return clients
 
-# --- 4. モデル取得 (Utility) ---
+# --- 5. Model Fetching Utilities ---
 
 async def fetch_models_google(api_key: str) -> List[str]:
     try:
@@ -261,9 +279,10 @@ async def fetch_models_local(base_url: str, api_key: str = "sk-xxx") -> List[str
         print(f"Local model fetch failed: {e}")
         return ["local-model-error"]
 
-# --- 5. ファイル解析 ---
+# --- 6. File Analysis ---
 
 def extract_text_from_file(file_content: bytes, file_name: str) -> str:
+    """Extract text from PDF or TXT files."""
     if file_name.endswith('.pdf'):
         try:
             reader = PyPDF2.PdfReader(io.BytesIO(file_content))
@@ -273,7 +292,7 @@ def extract_text_from_file(file_content: bytes, file_name: str) -> str:
         return file_content.decode('utf-8', errors='ignore')
     return ""
 
-# --- 6. API呼び出し (Retry logic with Tenacity) ---
+# --- 7. Core AI Logic (Retry & Execution) ---
 
 class RateLimitError(Exception): pass
 
@@ -283,7 +302,8 @@ class RateLimitError(Exception): pass
     retry=retry_if_exception_type((RateLimitError, Exception)),
     reraise=True
 )
-async def call_provider_with_retry(provider: str, model: str, sys_prompt: str, user_prompt: str, temp: float, clients: Dict, max_tokens: int = 4096, top_p: float = 1.0):
+async def call_provider_with_retry(provider: str, model: str, sys_prompt: str, user_prompt: str, temp: float, clients: Dict, max_tokens: int = 4096, top_p: float = 1.0) -> str:
+    """Call an AI provider with robust error handling and retry logic."""
     try:
         client = clients.get(provider)
         if not client: raise Exception(f"Provider {provider} not configured.")
@@ -305,9 +325,8 @@ async def call_provider_with_retry(provider: str, model: str, sys_prompt: str, u
             raise RateLimitError(str(e))
         raise e
 
-# --- 7. パース ---
-
 def parse_response(name: str, text: str) -> Tuple[str, str, str, str]:
+    """Parse the raw AI response into structured data."""
     clean_text = re.sub(r'<[^>]+>', '', text)
     clean_text = clean_text.replace("```html", "").replace("```", "").strip()
     vote = "否認"; condition = "特になし"
@@ -320,9 +339,8 @@ def parse_response(name: str, text: str) -> Tuple[str, str, str, str]:
         if condition.lower() in ["なし", "none", "無し", "特になし", ""]: condition = ""
     return name, clean_text, vote, condition
 
-# --- 8. コアロジック ---
-
 async def ask_philosopher(philosopher_id: str, question: str, context: str = "", other_opinions: str = "", debate: bool = False, delay: float = 0) -> Tuple[str, str, str, str]:
+    """Execute a deliberation sequence for a single MAGI unit."""
     if delay > 0: await asyncio.sleep(delay)
     
     config = load_persona_config().get(philosopher_id)
@@ -346,6 +364,7 @@ async def ask_philosopher(philosopher_id: str, question: str, context: str = "",
         return (config["name"], f"AI Error: {str(e)}", "否認", "エラー発生")
 
 async def ask_magi_system(question: str, context: str = "", debate: bool = False, synthesis: bool = True, file_name: str = "") -> Dict[str, Any]:
+    """Orchestrate the entire MAGI deliberation process (3 Magi + Seele)."""
     tasks = [
         ask_philosopher("MELCHIOR", question, context, delay=0),
         ask_philosopher("BALTHASAR", question, context, delay=0.5),
@@ -377,5 +396,8 @@ async def ask_magi_system(question: str, context: str = "", debate: bool = False
         except Exception as e:
             summary = f"【警告】ゼーレの介入に失敗しました（{str(e)}）。三賢者の個別判断を確認してください。"
     
-    add_history(question, results, final_score, summary, file_name)
+    # Legacy support, though add_history_with_user is preferred in implementation
+    # This prevents errors if called directly.
+    # add_history(question, results, final_score, summary, file_name)
+    
     return {"magi_results": results, "final_score": final_score, "seele_summary": summary}

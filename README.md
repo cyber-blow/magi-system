@@ -1,4 +1,4 @@
-# SUPER COMPUTER SYSTEM [MAGI] - Ultimate Upgrade (Phase 9)
+# SUPER COMPUTER SYSTEM [MAGI] - Ultimate Upgrade (Phase 10)
 
 本プロジェクトは、エヴァンゲリオンに登場するスーパーコンピューター「MAGI」を完全に再現した、高度な合議制意思決定支援プラットフォームです。
 複数のAIプロバイダー（Google, Groq, OpenAI, Anthropic, Local LLM）を統合し、実務的な意思決定に耐えうるレジリエンス、多角的な分析能力、そして外部連携機能を備えています。
@@ -25,6 +25,8 @@
 
 ### 3. インテリジェンス & HUDインターフェース
 - **画面レイアウトの最適化**: タイトルの中央配置や操作系の集約により、直感的なHUD（ヘッドアップディスプレイ）環境を提供。
+- **タイピング演出 (Typing Effect)**: 審議結果出力時に文字を順次表示し、MAGIの思考プロセスをリアルに演出。
+- **高度分析ダッシュボード**: 履歴・是認率・各賢者のバイアス（承認傾向）を可視化するグラフ機能。
 - **資料投入機能**: PDFやテキストファイルをアップロードし、審議の「参考資料」として活用。
 - **人員一括管理**: CSVインポート/エクスポートによる職員データのバックアップと一括登録。
 - **履歴書出**: 審議記録を Markdown形式で出力可能。
@@ -33,6 +35,11 @@
 - **対応API**: Google (Gemini), Groq, OpenAI, Anthropic。
 - **Local LLM**: Ollama等、ローカルAIとの連携。
 - **リトライ耐性**: 429制限への自動リトライとバックオフ処理。
+
+### 5. 高度な保守性と拡張性 (Refactoring)
+- **モジュール構造**: UIコンポーネントを `ui/` ディレクトリに分割し、メンテナンス性を向上。
+- **型安全性**: コアロジックに型定義とDocstringを完備。
+- **スタイル分離**: CSSを `assets/style.css` に外部化し、デザイン調整を容易に。
 
 ---
 
@@ -59,15 +66,21 @@
 
 ## 📂 プロジェクト構成
 
-- `app.py`: Streamlitインターフェース（HUD/UI/Session）
-- `magi_core.py`: AIオーケストレーター・認証・外部連携ロジック
-- `users.json`: ユーザーデータベース（ personnel / roles ）
-- `webhooks.json`: 外部連携用URL設定
-- `sessions.json`: アクティブセッション・レジストリ
-- `personas.json`: ペルソナ設定（プロンプト等）
-- `api_keys.json`: APIプロバイダー・SEELE設定
-- `history.json`: 審議記録データベース
-- `.gitignore`: 秘密情報の流出防止設定
+- `app.py`: アプリケーションエントリーポイント
+- `magi_core.py`: AIオーケストレーション・認証・バックエンドロジック
+- `ui/`: UIコンポーネントモジュール
+  - `common.py`: 共通UI（認証、ヘッダー）
+  - `main_panel.py`: 審議画面ロジック
+  - `admin_panel.py`: 管理画面ロジック
+  - `history_panel.py`: 履歴・分析画面ロジック
+- `assets/`: 静的リソース（CSS等）
+- `users.json`: ユーザーデータベース
+- `webhooks.json`: 外部連携設定
+- `sessions.json`: アクティブセッション
+- `personas.json`: ペルソナ設定
+- `api_keys.json`: APIキー設定
+- `history.json`: 審議ログ
+- `.gitignore`: セキュリティ設定
 
 ---
 
