@@ -4,6 +4,11 @@
             "password": "nerv",
             "name": "碇ゲンドウ",
             "role": "Commander"
+        },
+        "test": {
+            "password": "test",
+            "name": "test",
+            "role": "Operator"
         }
     }
 }

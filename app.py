@@ -117,38 +117,41 @@ if not st.session_state.authenticated:
 
 # --- 3. ナビゲーション ---
 def show_nav():
-    cols = st.columns([3, 1.5, 1.5])
-    with cols[0]:
+    is_admin = st.session_state.user["role"] in ["Commander", "Sub-Commander"] or "Admin" in st.session_state.user["role"]
+    
+    # Role-based security check for Admin page
+    if st.session_state.page == "admin" and not is_admin:
+        st.session_state.page = "main"
+        st.rerun()
+
+    # Layout for Header
+    h_cols = st.columns([1.5, 4, 2])
+    
+    with h_cols[1]: # CENTER: Title
         t = "MAGI SYSTEM INTERFACE" if st.session_state.page == "main" else ("ADMIN CONSOLE" if st.session_state.page == "admin" else "CENTRAL LOGS")
         st.markdown(f'<h1 class="main-title">{t}</h1>', unsafe_allow_html=True)
-    with cols[1]:
-        # Fixed height for operator text to prevent jumping/overlap
-        st.markdown(f'<div style="text-align:right; font-size:0.7em; color:#00FF00; height:18px; margin-bottom:5px; overflow:hidden; white-space:nowrap;">Operator: {st.session_state.user["name"]}</div>', unsafe_allow_html=True)
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.session_state.page == "history":
-                if st.button("◀ RETURN", use_container_width=True): st.session_state.page = "main"; st.rerun()
-            else:
-                if st.button("HISTORY", use_container_width=True): st.session_state.page = "history"; st.rerun()
-        with c2:
-            if st.button("LOGOUT", use_container_width=True):
+    
+    with h_cols[2]: # RIGHT: Operator, Logout, Admin
+        st.markdown(f'<div style="text-align:right; font-size:0.75em; color:#00FF00; height:18px; margin-bottom:5px; overflow:hidden; white-space:nowrap;">Operator: {st.session_state.user["name"]}</div>', unsafe_allow_html=True)
+        r_cols = st.columns(2)
+        with r_cols[0]: # Logout
+            if st.button("LOGOUT", use_container_width=True, key="h_logout"):
                 if "sync_token" in st.query_params:
                     token = st.query_params["sync_token"]
                     magi_core.clear_session(token)
                     st.query_params.clear()
                 st.session_state.authenticated = False
                 st.rerun()
-    with cols[2]:
-        st.markdown('<div style="height:23px;"></div>', unsafe_allow_html=True)
-        is_admin = st.session_state.user["role"] in ["Commander", "Sub-Commander"] or "Admin" in st.session_state.user["role"]
-        
-        if st.session_state.page == "admin":
-            if not is_admin:
-                st.session_state.page = "main"
-                st.rerun()
-            if st.button("RETURN", use_container_width=True, key="admin_ret"): st.session_state.page = "main"; st.rerun()
-        elif is_admin:
-            if st.button("ADMIN ▶", use_container_width=True, key="admin_nav"): st.session_state.page = "admin"; st.rerun()
+        with r_cols[1]: # Admin / Return
+            if st.session_state.page == "main":
+                if is_admin:
+                    if st.button("ADMIN ⚙️", use_container_width=True, key="h_admin"):
+                        st.session_state.page = "admin"
+                        st.rerun()
+            else: # Admin or History page
+                if st.button("◀ RETURN", use_container_width=True, key="h_return"):
+                    st.session_state.page = "main"
+                    st.rerun()
     st.markdown('<div class="header-container"></div>', unsafe_allow_html=True)
 
 # --- 4. メイン画面 ---
@@ -189,6 +192,11 @@ def render_main():
                         st.error("【警告】API制限（429）に達しました。別のプロバイダーを使用してください。")
                     except Exception as e: st.error(f"Error: {e}")
             else: st.error("Enter topic.")
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("📜 VIEW HISTORY", use_container_width=True, key="main_hist_btn"):
+            st.session_state.page = "history"
+            st.rerun()
 
     if st.session_state.results:
         res = st.session_state.results
@@ -223,12 +231,37 @@ def render_decision_graph(res):
 def render_history():
     history = magi_core.load_json(magi_core.HISTORY_PATH, [])
     if not history: st.info("No records."); return
-    for item in history:
-        with st.expander(f"[{item['timestamp'][:16]}] {item['question'][:40]}..."):
+    
+    # History Isolation: Commanders see all, others see only their own
+    is_privileged = st.session_state.user["role"] in ["Commander", "Sub-Commander"]
+    user_id = st.session_state.user["username"]
+    
+    filtered_history = [
+        item for item in history 
+        if is_privileged or item.get("user_id") == user_id
+    ]
+    
+    if not filtered_history:
+        st.info("No authorized records found.")
+        return
+
+    for item in reversed(filtered_history): # Newest first
+        u_label = f" | Op: {item.get('user_id', 'Unknown')}" if is_privileged else ""
+        with st.expander(f"[{item['timestamp'][:16]}{u_label}] {item['question'][:40]}..."):
             st.markdown(f"**Topic:** {item['question']}")
+            if is_privileged:
+                st.markdown(f"**Conducted by:** `{item.get('user_id', 'Unknown')}`")
+            
             for r in item["results"]: st.markdown(f"- **{r['name']}**: {r['vote']}")
-            md = f"# REPORT\n\nTopic: {item['question']}\n\n"
+            
+            md = f"# MAGI REPORT\n\n"
+            md += f"Topic: {item['question']}\n"
+            md += f"Operator: {item.get('user_id', 'Unknown')}\n"
+            md += f"Timestamp: {item.get('timestamp', '')}\n\n"
             for r in item['results']: md += f"## {r['name']}\n{r['vote']}\n{r['reason']}\n\n"
+            if item.get("seele_summary"):
+                md += f"## SEELE SUMMARY\n{item['seele_summary']}\n"
+            
             st.download_button("Export Report", md, file_name=f"MAGI_{item['id']}.md", key=f"dl_{item['id']}")
 
 def render_admin():
