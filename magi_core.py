@@ -4,6 +4,7 @@ import re
 import json
 import datetime
 import random
+import requests
 from typing import List, Tuple, Dict, Any, Optional
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
@@ -24,6 +25,8 @@ PERSONA_PATH = os.path.join(BASE_DIR, "personas.json")
 API_KEYS_PATH = os.path.join(BASE_DIR, "api_keys.json")
 HISTORY_PATH = os.path.join(BASE_DIR, "history.json")
 TEMPLATES_PATH = os.path.join(BASE_DIR, "templates.json")
+USERS_PATH = os.path.join(BASE_DIR, "users.json")
+WEBHOOKS_PATH = os.path.join(BASE_DIR, "webhooks.json")
 
 # 最終確定プロンプト指示
 OUTPUT_INSTRUCTION = """
@@ -109,6 +112,42 @@ def add_history(question: str, results: List[Tuple[str, str, str, str]], final_s
     entry = {
         "id": datetime.datetime.now().strftime("%Y%m%d%H%M%S"),
         "timestamp": datetime.datetime.now().isoformat(),
+        "question": question,
+        "file_name": file_name,
+        "results": [{"name": r[0], "reason": r[1], "vote": r[2], "condition": r[3]} for r in results],
+        "final_score": final_score,
+        "seele_summary": seele_summary
+    }
+    history.insert(0, entry)
+    save_json(HISTORY_PATH, history[:100])
+
+def execute_webhook_action(webhook_id: str, title: str, text: str) -> bool:
+    webhooks = load_json(WEBHOOKS_PATH, {"webhooks": {}}).get("webhooks", {})
+    cfg = webhooks.get(webhook_id)
+    if not cfg or not cfg.get("url"): return False
+    
+    try:
+        # Standard Slack/Discord payload
+        payload = {"text": f"【MAGI SYSTEM DECISION】\n*Topic*: {title}\n\n{text}"}
+        res = requests.post(cfg["url"], json=payload, timeout=10)
+        return res.status_code < 300
+    except Exception as e:
+        print(f"Webhook failed: {e}")
+        return False
+
+def authenticate_user(username, password) -> Optional[Dict[str, str]]:
+    users_data = load_json(USERS_PATH, {"users": {}})
+    user = users_data.get("users", {}).get(username)
+    if user and user["password"] == password:
+        return {"username": username, "name": user["name"], "role": user["role"]}
+    return None
+
+def add_history_with_user(user_id: str, question: str, results: List[Tuple[str, str, str, str]], final_score: int, seele_summary: str = "", file_name: str = ""):
+    history = load_json(HISTORY_PATH, [])
+    entry = {
+        "id": datetime.datetime.now().strftime("%Y%m%d%H%M%S"),
+        "timestamp": datetime.datetime.now().isoformat(),
+        "user_id": user_id,
         "question": question,
         "file_name": file_name,
         "results": [{"name": r[0], "reason": r[1], "vote": r[2], "condition": r[3]} for r in results],

@@ -1,0 +1,14 @@
+{
+    "webhooks": {
+        "slack": {
+            "name": "Slack Operations",
+            "url": "",
+            "active": false
+        },
+        "discord": {
+            "name": "Discord Strategic Command",
+            "url": "",
+            "active": false
+        }
+    }
+}

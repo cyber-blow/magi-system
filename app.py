@@ -23,15 +23,24 @@ CSS = """
 <style>
     .stApp { background-color: #000000; color: #FF8C00; font-family: 'Times New Roman', 'Yu Mincho', serif; }
     
-    /* Security Overlay */
-    .auth-overlay {
+    /* Security Overlay & Login */
+    .auth-bg {
         position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-        background: black; z-index: 1000; display: flex; flex-direction: column;
-        justify-content: center; align-items: center; text-align: center;
+        background: black; z-index: 0;
     }
-    .auth-header { font-size: 3em; letter-spacing: 0.5em; color: #FF0000; border: 2px solid #FF0000; padding: 20px; margin-bottom: 50px; }
-    .stButton { position: relative; z-index: 1001; }
-
+    .auth-header { 
+        font-size: 3em; letter-spacing: 0.5em; color: #FF0000; 
+        border: 2px solid #FF0000; padding: 20px; margin-bottom: 30px; 
+        text-align: center; font-weight: bold;
+    }
+    .auth-card {
+        background: rgba(15, 0, 0, 0.85);
+        border: 1px solid #FF0000;
+        padding: 40px;
+        margin-top: 10vh;
+        box-shadow: 0 0 40px rgba(255, 0, 0, 0.3);
+    }
+    
     .header-container { border-bottom: 4px double #FF8C00; padding-bottom: 10px; margin-bottom: 25px; }
     .main-title { font-size: 3em; letter-spacing: 0.3em; text-align: center; margin: 0; width: 100%; text-shadow: 0 0 10px #FF8C00; }
 
@@ -63,9 +72,29 @@ st.markdown(CSS, unsafe_allow_html=True)
 
 # --- 2. 認証画面 ---
 if not st.session_state.authenticated:
-    st.markdown('<div class="auth-overlay"><div class="auth-header">NERV TOP SECRET MATERIAL</div><p style="color: #FF8C00; letter-spacing: 0.2em;">SYSTEM MAGI: SYNAPTIC LINK INITIALIZATION REQUIRED</p></div>', unsafe_allow_html=True)
-    if st.button("INITIATE SYNCHRONIZATION", use_container_width=True):
-        st.session_state.authenticated = True; st.rerun()
+    st.markdown('<div class="auth-bg"></div>', unsafe_allow_html=True)
+    
+    _, col, _ = st.columns([1, 2, 1])
+    with col:
+        st.markdown('<div class="auth-card">', unsafe_allow_html=True)
+        st.markdown('<div class="auth-header">NERV TOP SECRET</div>', unsafe_allow_html=True)
+        st.markdown('<p style="color: #FF8C00; text-align:center; letter-spacing:0.2em; margin-bottom:30px;">SYSTEM MAGI: SYNAPTIC LINK INITIALIZATION</p>', unsafe_allow_html=True)
+        
+        user_id = st.text_input("ID / CODE NAME", key="login_user")
+        password = st.text_input("PASSWORD / SYNC KEY", type="password", key="login_pass")
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("INITIATE SYNCHRONIZATION", use_container_width=True, type="primary"):
+            user = magi_core.authenticate_user(user_id, password)
+            if user:
+                st.session_state.authenticated = True
+                st.session_state.user = user
+                st.success("SYNCHRONIZATION COMPLETE.")
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.error("ACCESS DENIED: PATTEN BLUE (IMPOSTOR)")
+        st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
 # --- 3. ナビゲーション ---
@@ -75,6 +104,7 @@ def show_nav():
         t = "MAGI SYSTEM INTERFACE" if st.session_state.page == "main" else ("ADMIN CONSOLE" if st.session_state.page == "admin" else "CENTRAL LOGS")
         st.markdown(f'<h1 class="main-title">{t}</h1>', unsafe_allow_html=True)
     with cols[1]:
+        st.markdown(f'<div style="text-align:right; font-size:0.8em; color:#00FF00; padding-top:10px;">Operator: {st.session_state.user["name"]} [{st.session_state.user["role"]}]</div>', unsafe_allow_html=True)
         if st.button("HISTORY", use_container_width=True): st.session_state.page = "history"; st.rerun()
     with cols[2]:
         if st.session_state.page == "admin":
@@ -110,6 +140,12 @@ def render_main():
                 with st.spinner("MAGI: ANALYZING..."):
                     try:
                         res = asyncio.run(magi_core.ask_magi_system(question, context, debate, synthesis, uploaded_file.name if uploaded_file else ""))
+                        # Record history with user context
+                        magi_core.add_history_with_user(
+                            st.session_state.user["username"], 
+                            question, res["magi_results"], res["final_score"], 
+                            res["seele_summary"], uploaded_file.name if uploaded_file else ""
+                        )
                         st.session_state.results = res; st.rerun()
                     except magi_core.RateLimitError as e:
                         st.error("【警告】API制限（429）に達しました。別のプロバイダーを使用してください。")
@@ -125,7 +161,21 @@ def render_main():
             c = colors.get(r[2], "#FFF")
             cols[i].markdown(f'<div class="magi-panel" style="border-color:{c};"><div class="magi-header" style="color:{c};">{r[0]}</div><div style="font-size:0.9em; white-space:pre-wrap; color:#EEE;">{r[1]}</div>' + (f'<div style="margin-top:10px; border:1px dashed #FFFF00; padding:5px; font-size:0.8em; color:#FFFF00;">CONDITION: {r[3]}</div>' if r[3] else "") + f'<div class="magi-vote" style="border-color:{c}; color:{c};">{r[2]}</div></div>', unsafe_allow_html=True)
         if res["seele_summary"]:
-            st.markdown(f'<div style="border:2px double #FF4500; background:#0a0500; padding:25px; margin-top:30px;"><h2 style="color:#FF4500; text-align:center;">SEELE SUMMARY</h2><p style="white-space:pre-wrap; color:#FF8C00;">{res["seele_summary"]}</p></div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="border:2px double #FF4500; background:#0a0500; padding:25px; margin-bottom:20px; margin-top:30px;"><h2 style="color:#FF4500; text-align:center;">SEELE SUMMARY</h2><p style="white-space:pre-wrap; color:#FF8C00;">{res["seele_summary"]}</p></div>', unsafe_allow_html=True)
+            
+            # Action Buttons
+            st.markdown("### ⚡ ACTION EXECUTION")
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                if st.button("EXECUTE: SEND TO SLACK", use_container_width=True):
+                    if magi_core.execute_webhook_action("slack", question, res["seele_summary"]):
+                        st.success("TRANSMISSION COMPLETE: SLACK")
+                    else: st.error("TRANSMISSION FAILED: CHECK SLACK CONFIG")
+            with c2:
+                if st.button("EXECUTE: SEND TO DISCORD", use_container_width=True):
+                    if magi_core.execute_webhook_action("discord", question, res["seele_summary"]):
+                        st.success("TRANSMISSION COMPLETE: DISCORD")
+                    else: st.error("TRANSMISSION FAILED: CHECK DISCORD CONFIG")
 
 def render_decision_graph(res):
     scores = [{"是認":100, "条件付是認":50, "否認":15}.get(r[2], 0) for r in res]
@@ -150,20 +200,18 @@ def render_admin():
     with t_persona:
         config = magi_core.load_persona_config()
         api_providers = api_config["providers"]
-        p_tabs = st.tabs(["MELCHIOR", "BALTHASAR", "CASPER"])
-        for pid in ["MELCHIOR", "BALTHASAR", "CASPER"]:
-            with p_tabs[["MELCHIOR", "BALTHASAR", "CASPER"].index(pid)]:
-                d = config[pid]
-                c1, c2 = st.columns(2)
-                with c1:
-                    d["name"] = st.text_input("Name", d["name"], key=f"n_{pid}")
-                    d["model_provider"] = st.selectbox("Provider", list(api_providers.keys()), index=list(api_providers.keys()).index(d["model_provider"]) if d["model_provider"] in api_providers else 0, key=f"pv_{pid}")
-                with c2:
-                    m_list = api_providers.get(d["model_provider"], {}).get("models", [d["model_name"]])
-                    if not m_list: m_list = [d["model_name"]]
-                    if d["model_name"] not in m_list: m_list.append(d["model_name"])
-                    d["model_name"] = st.selectbox("Model", m_list, index=m_list.index(d["model_name"]), key=f"m_{pid}")
-                    d["temperature"] = st.slider("Temp", 0.0, 1.0, float(d.get("temperature", 0.7)), key=f"t_{pid}")
+        # p_tabs = st.tabs(["MELCHIOR", "BALTHASAR", "CASPER"]) # This line is removed as per the diff
+        for pid, d in config["personas"].items():
+            with st.expander(f"MAGI {pid.upper()}: {d['name']}", expanded=True):
+                d["name"] = st.text_input("Name", d["name"], key=f"n_{pid}")
+                d["role"] = st.text_input("Role", d["role"], key=f"r_{pid}")
+                c_prov = st.selectbox("Provider", list(api_config["providers"].keys()), index=list(api_config["providers"].keys()).index(d.get("provider", "google")), key=f"p_{pid}")
+                d["provider"] = c_prov
+                
+                m_list = api_config["providers"].get(c_prov, {}).get("models", ["gemini-1.5-flash"])
+                if d["model_name"] not in m_list: m_list.append(d["model_name"])
+                d["model_name"] = st.selectbox("Model", m_list, index=m_list.index(d["model_name"]), key=f"m_{pid}")
+                d["temperature"] = st.slider("Temp", 0.0, 1.0, float(d.get("temperature", 0.7)), key=f"t_{pid}")
                 d["prompt"] = st.text_area("System Prompt", d["prompt"], height=250, key=f"sp_{pid}")
                 if st.button(f"Save {pid} Settings"):
                     magi_core.save_persona_config(config); st.success("Updated.")
@@ -181,32 +229,24 @@ def render_admin():
 
         st.markdown("<br><hr>", unsafe_allow_html=True)
         st.markdown("### 🔌 API PROVIDER CONNECTIONS")
-        
-        p_info = {
-            "google": {"t": "GOOGLE GEMINI", "fetch": magi_core.fetch_models_google},
-            "groq": {"t": "GROQ", "fetch": magi_core.fetch_models_groq},
-            "openai": {"t": "OPENAI", "fetch": magi_core.fetch_models_openai},
-            "anthropic": {"t": "ANTHROPIC", "fetch": magi_core.fetch_models_anthropic},
-            "local": {"t": "LOCAL / CUSTOM (Ollama etc.)", "fetch": magi_core.fetch_models_local}
-        }
-        
-        for pid, info in p_info.items():
+        p_info = {"google": "GOOGLE GEMINI", "groq": "GROQ", "openai": "OPENAI", "anthropic": "ANTHROPIC", "local": "LOCAL (Ollama etc.)"}
+        for pid, label in p_info.items():
             providers = api_config["providers"]
             is_active = bool(providers[pid].get("api_key") or providers[pid].get("base_url"))
             status = f'<span class="status-badge status-active">ACTIVE</span>' if is_active else f'<span class="status-badge status-inactive">INACTIVE</span>'
-            
-            st.markdown(f'<div class="provider-section"><h4>{info["t"]} {status}</h4>', unsafe_allow_html=True)
+            st.markdown(f'<div class="provider-section"><h4>{label} {status}</h4>', unsafe_allow_html=True)
             if pid == "local":
-                url = st.text_input(f"BASE URL (OpenAI compatible)", providers[pid].get("base_url", "http://localhost:11434/v1"), key=f"url_{pid}")
-                key = st.text_input(f"API KEY (Optional)", providers[pid].get("api_key", "sk-xxx"), type="password", key=f"ak_{pid}")
-                if st.button(f"Sync Models from {pid.upper()}"):
-                    models = asyncio.run(info["fetch"](url, key))
+                url = st.text_input(f"BASE URL", providers[pid].get("base_url", ""), key=f"url_{pid}")
+                key = st.text_input(f"API KEY (Optional)", providers[pid].get("api_key", ""), type="password", key=f"ak_{pid}")
+                if st.button(f"Sync Models {pid.upper()}"):
+                    models = asyncio.run(magi_core.fetch_models_local(url, key))
                     providers[pid] = {"base_url": url, "api_key": key, "models": models}
                     magi_core.save_api_config(api_config); st.success("Synced."); st.rerun()
             else:
-                key = st.text_input(f"API KEY ({pid.upper()})", providers[pid].get("api_key", ""), type="password", key=f"ak_{pid}")
-                if st.button(f"Validate & Sync {pid}"):
-                    models = asyncio.run(info["fetch"](key))
+                key = st.text_input(f"API KEY", providers[pid].get("api_key", ""), type="password", key=f"ak_{pid}")
+                if st.button(f"Sync Models {pid.upper()}"):
+                    fetch_map = {"google": magi_core.fetch_models_google, "groq": magi_core.fetch_models_groq, "openai": magi_core.fetch_models_openai, "anthropic": magi_core.fetch_models_anthropic}
+                    models = asyncio.run(fetch_map[pid](key))
                     providers[pid] = {"api_key": key, "models": models}
                     magi_core.save_api_config(api_config); st.success("Synced."); st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
@@ -218,6 +258,19 @@ def render_admin():
             tps[tn] = magi_core.load_persona_config()
             magi_core.save_json(magi_core.TEMPLATES_PATH, tps); st.success("Saved.")
         if st.button("Clear History"): magi_core.save_json(magi_core.HISTORY_PATH, []); st.rerun()
+
+    with t_int:
+        st.markdown("### 🛰️ EXTERNAL INTEGRATIONS (WEBHOOKS)")
+        webhooks_data = magi_core.load_json(magi_core.WEBHOOKS_PATH, {"webhooks": {}})
+        wh = webhooks_data.get("webhooks", {})
+        
+        for wid, cfg in wh.items():
+            with st.expander(f"{wid.upper()} - {cfg['name']}", expanded=True):
+                new_url = st.text_input("WEBHOOK URL", value=cfg['url'], key=f"wh_url_{wid}")
+                if st.button(f"SAVE {wid.upper()} CONFIG"):
+                    wh[wid]["url"] = new_url
+                    magi_core.save_json(magi_core.WEBHOOKS_PATH, webhooks_data)
+                    st.success("CONFIGURATION UPDATED.")
 
 # --- 5. 実行 ---
 show_nav()

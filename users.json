@@ -1,0 +1,9 @@
+{
+    "users": {
+        "nerv_admin": {
+            "password": "nerv",
+            "name": "碇ゲンドウ",
+            "role": "Commander"
+        }
+    }
+}
