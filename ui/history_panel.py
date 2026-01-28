@@ -83,7 +83,7 @@ def render_history():
             st.info("No authorized records found.")
             return
 
-        for item in reversed(filtered_history): # Newest first
+        for i, item in enumerate(reversed(filtered_history)): # Newest first
             u_label = f" | Op: {item.get('user_id', 'Unknown')}" if is_privileged else ""
             with st.expander(f"[{item['timestamp'][:16]}{u_label}] {item['question'][:40]}..."):
                 st.markdown(f"**Topic:** {item['question']}")
@@ -100,4 +100,5 @@ def render_history():
                 if item.get("seele_summary"):
                     md += f"## SEELE SUMMARY\n{item['seele_summary']}\n"
                 
-                st.download_button("Export Report", md, file_name=f"MAGI_{item['id']}.md", key=f"dl_{item['id']}")
+                # Append index to key to ensure absolute uniqueness in Streamlit
+                st.download_button("Export Report", md, file_name=f"MAGI_{item['id']}.md", key=f"dl_{item['id']}_{i}")

@@ -118,8 +118,10 @@ def save_api_config(config: Dict[str, Any]) -> None:
 def add_history(question: str, results: List[Tuple[str, str, str, str]], final_score: int, seele_summary: str = "", file_name: str = "") -> None:
     """Legacy wrapper for adding history (without user context)."""
     history = load_json(HISTORY_PATH, [])
+    # Append random suffix to ensure ID uniqueness (even if multiple entries in 1sec)
+    unique_id = datetime.datetime.now().strftime("%Y%m%d%H%M%S") + "_" + str(uuid.uuid4())[:4]
     entry = {
-        "id": datetime.datetime.now().strftime("%Y%m%d%H%M%S"),
+        "id": unique_id,
         "timestamp": datetime.datetime.now().isoformat(),
         "question": question,
         "file_name": file_name,
@@ -133,8 +135,10 @@ def add_history(question: str, results: List[Tuple[str, str, str, str]], final_s
 def add_history_with_user(user_id: str, question: str, results: List[Tuple[str, str, str, str]], final_score: int, seele_summary: str = "", file_name: str = "") -> None:
     """Record a deliberation session into history.json with user context."""
     history = load_json(HISTORY_PATH, [])
+    # Append random suffix to ensure ID uniqueness
+    unique_id = datetime.datetime.now().strftime("%Y%m%d%H%M%S") + "_" + str(uuid.uuid4())[:4]
     entry = {
-        "id": datetime.datetime.now().strftime("%Y%m%d%H%M%S"),
+        "id": unique_id,
         "timestamp": datetime.datetime.now().isoformat(),
         "user_id": user_id,
         "question": question,
