@@ -11,7 +11,19 @@
 
 ---
 
-## 🚀 主要機能
+## � スクリーンショット (Screenshots)
+
+<div align="center">
+  <img src="assets/screenshots/main_panel.png" width="800" alt="Main Interface">
+  <p><i>MAGI SYSTEM メイン審議画面</i></p>
+  <br>
+  <img src="assets/screenshots/analytics_panel.png" width="800" alt="Analytics Dashboard">
+  <p><i>高度分析ダッシュボード（是認率・バイアス分析）</i></p>
+</div>
+
+---
+
+## �🚀 主要機能
 
 ### 1. 意思決定・外部連携 (Action Agent)
 - **合議アルゴリズム**: 三賢者による個別審議とゼーレによる最終総括。
