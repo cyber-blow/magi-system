@@ -1,4 +1,4 @@
-# SUPER COMPUTER SYSTEM [MAGI] - Ultimate Upgrade (Phase 10)
+# SUPER COMPUTER SYSTEM [MAGI] - Ultimate Upgrade (Phase 11)
 
 本プロジェクトは、エヴァンゲリオンに登場するスーパーコンピューター「MAGI」を完全に再現した、高度な合議制意思決定支援プラットフォームです。
 複数のAIプロバイダー（Google, Groq, OpenAI, Anthropic, Local LLM）を統合し、実務的な意思決定に耐えうるレジリエンス、多角的な分析能力、そして外部連携機能を備えています。
@@ -36,9 +36,10 @@
 - **Local LLM**: Ollama等、ローカルAIとの連携。
 - **リトライ耐性**: 429制限への自動リトライとバックオフ処理。
 
-### 5. 高度な保守性と拡張性 (Refactoring)
+### 5. 高度な保守性と拡張性 (Maintenance & Refactoring)
 - **モジュール構造**: UIコンポーネントを `ui/` ディレクトリに分割し、メンテナンス性を向上。
 - **型安全性**: コアロジックに型定義とDocstringを完備。
+- **安定性向上**: ID生成アルゴリズムの改善（ランダムハッシュ付与）により、Streamlit上の要素キー重複エラーを解消。
 - **スタイル分離**: CSSを `assets/style.css` に外部化し、デザイン調整を容易に。
 
 ---
