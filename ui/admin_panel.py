@@ -44,6 +44,32 @@ def render_admin():
                 if st.button(f"Save {pid} Settings"):
                     magi_core.save_persona_config(config); st.success("Updated.")
 
+        st.markdown("<hr>", unsafe_allow_html=True)
+        with st.expander("📂 BULK OPERATIONS (JSON IMPORT/EXPORT)", expanded=False):
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown("**EXPORT PERSONAS**")
+                import json
+                persona_data = json.dumps(config, indent=4, ensure_ascii=False)
+                st.download_button("DOWNLOAD JSON", persona_data, file_name="personas_config.json", mime="application/json")
+            
+            with c2:
+                st.markdown("**IMPORT PERSONAS**")
+                uploaded_json = st.file_uploader("Upload JSON (personas_config.json)", type="json", key="persona_json")
+                if uploaded_json:
+                    if st.button("EXECUTE IMPORT (PERSONAS)"):
+                        try:
+                            new_config = json.loads(uploaded_json.getvalue().decode("utf-8"))
+                            # Light validation: check if at least one of the core MAGI IDs is present
+                            if any(k in new_config for k in ["MELCHIOR", "BALTHASAR", "CASPER"]):
+                                magi_core.save_persona_config(new_config)
+                                st.success("Personas imported successfully.")
+                                time.sleep(1); st.rerun()
+                            else:
+                                st.error("Invalid JSON format: Core persona IDs missing.")
+                        except Exception as e:
+                            st.error(f"Import failed: {e}")
+
     with t_api:
         st.markdown("### 👁️ SEELE CONFIG")
         c1, c2 = st.columns(2)
