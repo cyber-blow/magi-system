@@ -8,6 +8,10 @@ import requests
 import uuid
 from typing import List, Tuple, Dict, Any, Optional
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from dotenv import load_dotenv
+import bcrypt
+
+load_dotenv()
 
 # PDF Analysis
 import PyPDF2
@@ -105,6 +109,13 @@ def load_api_config() -> Dict[str, Any]:
         }
     }
     data = load_json(API_KEYS_PATH, default_config)
+    
+    # Override with Environment Variables
+    if os.getenv("GOOGLE_API_KEY"): data["providers"]["google"]["api_key"] = os.getenv("GOOGLE_API_KEY")
+    if os.getenv("GROQ_API_KEY"): data["providers"]["groq"]["api_key"] = os.getenv("GROQ_API_KEY")
+    if os.getenv("OPENAI_API_KEY"): data["providers"]["openai"]["api_key"] = os.getenv("OPENAI_API_KEY")
+    if os.getenv("ANTHROPIC_API_KEY"): data["providers"]["anthropic"]["api_key"] = os.getenv("ANTHROPIC_API_KEY")
+
     # Ensure structure integrity
     if "providers" not in data: data["providers"] = default_config["providers"]
     if "seele_model" not in data: data["seele_model"] = default_config["seele_model"]
@@ -170,15 +181,25 @@ def authenticate_user(username: str, password: str) -> Optional[Dict[str, str]]:
     """Verify user credentials against users.json."""
     users_data = load_json(USERS_PATH, {"users": {}})
     user = users_data.get("users", {}).get(username)
-    if user and user["password"] == password:
-        return {"username": username, "name": user["name"], "role": user["role"]}
+    if user:
+        stored_password = user["password"]
+        try:
+            # Check if password matches (bcrypt)
+            if bcrypt.checkpw(password.encode('utf-8'), stored_password.encode('utf-8')):
+                return {"username": username, "name": user["name"], "role": user["role"]}
+        except ValueError:
+            # Fallback for plain text if needed (though we migrated)
+            if stored_password == password:
+                 return {"username": username, "name": user["name"], "role": user["role"]}
     return None
 
 def add_user(username: str, password: str, name: str, role: str) -> bool:
     """Register a new user."""
     users_data = load_json(USERS_PATH, {"users": {}})
     if username in users_data["users"]: return False
-    users_data["users"][username] = {"password": password, "name": name, "role": role}
+    
+    hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    users_data["users"][username] = {"password": hashed, "name": name, "role": role}
     save_json(USERS_PATH, users_data)
     return True
 
@@ -302,31 +323,44 @@ class RateLimitError(Exception): pass
 
 @retry(
     stop=stop_after_attempt(5),
-    wait=wait_exponential(multiplier=1, min=2, max=10),
+    wait=wait_exponential(multiplier=1, min=2, max=30),
     retry=retry_if_exception_type((RateLimitError, Exception)),
     reraise=True
 )
-async def call_provider_with_retry(provider: str, model: str, sys_prompt: str, user_prompt: str, temp: float, clients: Dict, max_tokens: int = 4096, top_p: float = 1.0) -> str:
-    """Call an AI provider with robust error handling and retry logic."""
-    try:
-        client = clients.get(provider)
-        if not client: raise Exception(f"Provider {provider} not configured.")
+async def _execute_provider_call(provider: str, model: str, sys_prompt: str, user_prompt: str, temp: float, clients: Dict, max_tokens: int = 4096, top_p: float = 1.0) -> str:
+    """Internal function to execute the actual API call."""
+    client = clients.get(provider)
+    if not client: raise Exception(f"Provider {provider} not configured.")
 
-        if provider == "google":
-            m = genai.GenerativeModel(model)
-            response = await asyncio.to_thread(m.generate_content, sys_prompt + "\n\n" + user_prompt, 
-                                             generation_config=genai.types.GenerationConfig(temperature=temp, top_p=top_p, max_output_tokens=max_tokens))
-            return response.text
-        elif provider in ["groq", "openai", "local"]:
-            completion = await client.chat.completions.create(model=model, messages=[{"role": "system", "content": sys_prompt}, {"role": "user", "content": user_prompt}], temperature=temp, top_p=top_p, max_tokens=max_tokens)
-            return completion.choices[0].message.content
-        elif provider == "anthropic":
-            message = await client.messages.create(model=model, max_tokens=max_tokens, system=sys_prompt, messages=[{"role": "user", "content": user_prompt}], temperature=temp, top_p=top_p)
-            return message.content[0].text
-        else: raise ValueError(f"Unknown provider: {provider}")
+    if provider == "google":
+        m = genai.GenerativeModel(model)
+        response = await asyncio.to_thread(m.generate_content, sys_prompt + "\n\n" + user_prompt, 
+                                            generation_config=genai.types.GenerationConfig(temperature=temp, top_p=top_p, max_output_tokens=max_tokens))
+        return response.text
+    elif provider in ["groq", "openai", "local"]:
+        completion = await client.chat.completions.create(model=model, messages=[{"role": "system", "content": sys_prompt}, {"role": "user", "content": user_prompt}], temperature=temp, top_p=top_p, max_tokens=max_tokens)
+        return completion.choices[0].message.content
+    elif provider == "anthropic":
+        message = await client.messages.create(model=model, max_tokens=max_tokens, system=sys_prompt, messages=[{"role": "user", "content": user_prompt}], temperature=temp, top_p=top_p)
+        return message.content[0].text
+    else: raise ValueError(f"Unknown provider: {provider}")
+
+async def call_provider_with_retry(provider: str, model: str, sys_prompt: str, user_prompt: str, temp: float, clients: Dict, max_tokens: int = 4096, top_p: float = 1.0) -> str:
+    """Wrapper that handles fallback logic for 429/Quota errors."""
+    try:
+        return await _execute_provider_call(provider, model, sys_prompt, user_prompt, temp, clients, max_tokens, top_p)
     except Exception as e:
-        if "429" in str(e) or "quota" in str(e).lower():
-            raise RateLimitError(str(e))
+        # Check for Rate Limit / Quota Exceeded
+        is_rate_limit = "429" in str(e) or "quota" in str(e).lower() or "ResourceExhausted" in str(e)
+        
+        if is_rate_limit and provider == "google" and "gemini-2.0" in model:
+            print(f"Rates exceeded for {model}. Switching to fallback: gemini-1.5-flash")
+            try:
+                # Immediate fallback retry
+                return await _execute_provider_call(provider, "gemini-1.5-flash", sys_prompt, user_prompt, temp, clients, max_tokens, top_p)
+            except Exception as e2:
+                print(f"Fallback failed: {e2}")
+                raise e # Raise original or new error to be handled by caller
         raise e
 
 def parse_response(name: str, text: str) -> Tuple[str, str, str, str]:

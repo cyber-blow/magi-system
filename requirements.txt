@@ -6,3 +6,5 @@ anthropic
 tenacity
 PyPDF2
 streamlit-echarts
+python-dotenv
+bcrypt
