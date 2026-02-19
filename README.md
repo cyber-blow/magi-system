@@ -1,4 +1,4 @@
-# SUPER COMPUTER SYSTEM [MAGI] - Ultimate Upgrade (Phase 12)
+# SUPER COMPUTER SYSTEM [MAGI] - Ultimate Upgrade (Phase 13)
 
 本プロジェクトは、エヴァンゲリオンに登場するスーパーコンピューター「MAGI」を完全に再現した、高度な合議制意思決定支援プラットフォームの作成を目指します。
 複数のAIプロバイダー（Google, Groq, OpenAI, Anthropic, Local LLM）を統合し、実務的な意思決定に耐えうるレジリエンス、多角的な分析能力、そして外部連携機能を備えています。
@@ -35,6 +35,7 @@
 ### 2. マルチユーザー・セキュリティ & 秘匿性
 
 - **NERV認証システム**: 厳格なログイン機能。セッション永続化によりページ更新後もログインを維持。
+- **高セキュリティ・ハッシュ化**: `bcrypt` によるパスワードの不可逆ハッシュ化を導入し、`users.json` 内の資格情報を保護。
 - **権限管理 (Personnel Management)**: 司令官（Commander）やオペレーター等のロール設定。管理画面へのアクセス制限。
 - **履歴の秘匿 (History Isolation)**: 一般ユーザーは自分の審議履歴のみ閲覧可能。管理者は全ユーザーのログを監査可能。
 
@@ -51,7 +52,7 @@
 
 - **対応API**: Google (Gemini), Groq, OpenAI, Anthropic。
 - **Local LLM**: Ollama等、ローカルAIとの連携。
-- **リトライ耐性**: 429制限への自動リトライとバックオフ処理。
+- **リトライ & フォールバック**: 429制限（Quota Exceeded）発生時に、指数バックオフによるリトライに加え、軽量モデル（Gemini 1.5 Flash等）への自動切り替え機能を搭載。
 
 ### 5. 高度な保守性と拡張性 (Maintenance & Refactoring)
 
