@@ -1,12 +1,12 @@
 {
     "users": {
         "nerv_admin": {
-            "password": "nerv",
+            "password": "$2b$12$qmnNeE0VblMDAC1RTTTeFOAOTDGTBg2id7lS6V4j73Z00Ay6EpZUq",
             "name": "碇ゲンドウ",
             "role": "Commander"
         },
         "test": {
-            "password": "test",
+            "password": "$2b$12$W.JO/CMBiYE/mlWPGmXzOe6EdaUr7.oxD83FMaiHe3WL3IbrAT9gq",
             "name": "test",
             "role": "Operator"
         }
